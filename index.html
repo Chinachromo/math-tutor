@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 课后错题诊断老师</title>
+  <style>
+    :root {
+      --ink: #1f2933;
+      --muted: #64748b;
+      --line: #d8e2ec;
+      --paper: #f7f9fc;
+      --blue: #245eb8;
+      --blue-soft: #e8f1ff;
+      --green: #247857;
+      --green-soft: #e8f6ee;
+      --amber: #8a6000;
+      --amber-soft: #fff4d6;
+      --red: #ad293d;
+      --red-soft: #fff0f2;
+      --shadow: 0 18px 44px rgba(31, 41, 51, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(rgba(255,255,255,0.78), rgba(255,255,255,0.95)),
+        linear-gradient(135deg, #e7f1ff 0%, #f8fafc 50%, #fff3d9 100%);
+    }
+
+    button, input, textarea, select { font: inherit; }
+    button { cursor: pointer; }
+
+    .app {
+      width: min(1360px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 22px 0 28px;
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr) 330px;
+      gap: 16px;
+    }
+
+    .panel {
+      border: 1px solid rgba(216,226,236,0.96);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.96);
+      box-shadow: var(--shadow);
+    }
+
+    .left, .right { align-self: start; padding: 16px; }
+
+    .brand {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding-bottom: 15px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: var(--blue);
+      color: #fff;
+      font-weight: 850;
+      font-size: 22px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 3px; font-size: 22px; line-height: 1.1; letter-spacing: 0; }
+    h2 { margin-bottom: 10px; font-size: 15px; letter-spacing: 0; }
+    .sub { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+
+    .section { padding-top: 16px; }
+
+    label {
+      display: block;
+      margin: 10px 0 5px;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px 11px;
+      color: var(--ink);
+      line-height: 1.45;
+    }
+
+    textarea {
+      min-height: 74px;
+      resize: vertical;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: 3px solid rgba(36,94,184,0.18);
+      border-color: var(--blue);
+    }
+
+    .mode-tabs, .source-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .tab {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .tab.active {
+      border-color: #aec8f0;
+      background: var(--blue-soft);
+      color: #244f91;
+    }
+
+    .hidden { display: none; }
+
+    .preview {
+      display: none;
+      width: 100%;
+      max-height: 170px;
+      object-fit: cover;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      margin-top: 8px;
+    }
+
+    .btn {
+      min-height: 40px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 0 13px;
+      background: var(--blue);
+      color: #fff;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .btn.secondary {
+      background: #fff;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+
+    .btn.full { width: 100%; margin-top: 10px; }
+    .btn:disabled { opacity: 0.6; cursor: wait; }
+
+    .main {
+      min-height: calc(100vh - 50px);
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      overflow: hidden;
+    }
+
+    .topbar {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      background: #fff;
+    }
+
+    .topbar h2 { margin: 0 0 4px; font-size: 20px; }
+    .topbar p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.4; }
+
+    .status {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      padding: 8px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .status.ai {
+      border-color: #adddc3;
+      background: var(--green-soft);
+      color: #1b6249;
+    }
+
+    .status.demo {
+      border-color: #eccf76;
+      background: var(--amber-soft);
+      color: #6f4b00;
+    }
+
+    .context-strip {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfdff;
+    }
+
+    .label-small {
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .question {
+      font-size: 21px;
+      font-weight: 820;
+      line-height: 1.35;
+    }
+
+    .situation {
+      margin-top: 7px;
+      color: var(--red);
+      font-size: 14px;
+      font-weight: 720;
+      line-height: 1.45;
+    }
+
+    .chat {
+      padding: 18px;
+      overflow: auto;
+      background:
+        linear-gradient(rgba(255,255,255,0.84), rgba(255,255,255,0.84)),
+        repeating-linear-gradient(0deg, transparent 0, transparent 33px, rgba(36,94,184,0.055) 34px),
+        repeating-linear-gradient(90deg, transparent 0, transparent 33px, rgba(36,94,184,0.045) 34px);
+    }
+
+    .row { display: flex; margin-bottom: 13px; }
+    .row.user { justify-content: flex-end; }
+
+    .bubble {
+      max-width: min(780px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px 13px;
+      font-size: 15px;
+      line-height: 1.58;
+    }
+
+    .user .bubble {
+      color: #fff;
+      background: var(--blue);
+      border-color: var(--blue);
+    }
+
+    .bubble.good { background: var(--green-soft); border-color: #adddc3; }
+    .bubble.warn { background: var(--amber-soft); border-color: #eccf76; }
+    .bubble.bad { background: var(--red-soft); border-color: #efbac4; }
+
+    .input-area {
+      padding: 15px 18px;
+      border-top: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .reply-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 9px;
+      align-items: start;
+    }
+
+    .reply-form textarea { min-height: 48px; }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--ink);
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    .note {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      padding: 11px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .note strong { display: block; margin-bottom: 4px; font-size: 14px; }
+
+    .signal-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .signal {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      font-size: 13px;
+      line-height: 1.42;
+    }
+
+    @media (max-width: 1120px) {
+      .app { grid-template-columns: 350px minmax(0, 1fr); }
+      .right { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 760px) {
+      .app { width: min(100vw - 20px, 680px); grid-template-columns: 1fr; }
+      .topbar, .reply-form { display: grid; grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel left">
+      <div class="brand">
+        <div class="logo">AI</div>
+        <div>
+          <h1>AI 错题诊断老师</h1>
+          <p class="sub">上传错题或选择书中题，模型做题型判断、错因诊断和追问。</p>
+        </div>
+      </div>
+
+      <section class="section">
+        <h2>题目来源</h2>
+        <div class="mode-tabs">
+          <button class="tab active" id="wrongMode" type="button">做错了</button>
+          <button class="tab" id="stuckMode" type="button">不会做</button>
+        </div>
+
+        <div id="stuckSources" class="source-tabs hidden">
+          <button class="tab active" id="uploadSource" type="button">我上传题目</button>
+          <button class="tab" id="bookSource" type="button">从书中选题</button>
+        </div>
+
+        <div id="photoBlock">
+          <label for="imageInput">题目/错题照片（可选）</label>
+          <input id="imageInput" type="file" accept="image/*">
+          <img id="preview" class="preview" alt="题目照片预览">
+        </div>
+
+        <div id="bookBlock" class="hidden">
+          <label for="bookChapter">书本章节</label>
+          <select id="bookChapter">
+            <option value="方程题">七上：一元一次方程</option>
+            <option value="有理数/实数计算题">七上：有理数运算</option>
+            <option value="整式化简题">七上：整式的加减</option>
+            <option value="几何题">七上：几何图形初步</option>
+            <option value="统计与数据题">七下：数据的收集、整理与描述</option>
+          </select>
+          <label for="bookQuestion">书中同类题</label>
+          <select id="bookQuestion"></select>
+        </div>
+
+        <label for="questionInput">题目文字</label>
+        <textarea id="questionInput">解方程：3x + 5 = 20</textarea>
+
+        <label for="taskHint">题型线索</label>
+        <select id="taskHint">
+          <option value="自动判断">自动判断</option>
+          <option value="方程题">方程题</option>
+          <option value="不等式题">不等式题</option>
+          <option value="整式化简题">整式化简题</option>
+          <option value="有理数/实数计算题">有理数/实数计算题</option>
+          <option value="几何题">几何题</option>
+          <option value="平面直角坐标系题">平面直角坐标系题</option>
+          <option value="统计与数据题">统计与数据题</option>
+          <option value="应用题">应用题</option>
+        </select>
+
+        <label for="situationInput">孩子当时的表现</label>
+        <textarea id="situationInput">她写了 3x = 20 + 5，然后说移项就是换到另一边。</textarea>
+
+        <button class="btn full" id="startButton" type="button">开始 AI 诊断</button>
+      </section>
+    </aside>
+
+    <main class="panel main">
+      <header class="topbar">
+        <div>
+          <h2>交互式老师对话区</h2>
+          <p>孩子每回答一次，模型会重新判断下一句该怎么问。</p>
+        </div>
+        <div class="status demo" id="serverStatus">检查服务中</div>
+      </header>
+
+      <section class="context-strip">
+        <div class="label-small">当前题目与现场</div>
+        <div class="question" id="questionView">还未开始</div>
+        <div class="situation" id="situationView"></div>
+      </section>
+
+      <section class="chat" id="chat" aria-live="polite"></section>
+
+      <section class="input-area">
+        <form class="reply-form" id="replyForm">
+          <textarea id="replyInput" placeholder="孩子回答老师的问题，或家长补充观察"></textarea>
+          <button class="btn" id="replyButton" type="submit">继续</button>
+        </form>
+        <div class="chips">
+          <button class="chip" type="button" data-reply="我不知道第一步怎么做">孩子说：不知道第一步</button>
+          <button class="chip" type="button" data-reply="我觉得应该把它移过去">孩子说：移过去</button>
+          <button class="chip" type="button" data-reply="我会算，但不知道为什么要这样">孩子说：会算但不懂</button>
+          <button class="chip" type="button" data-reply="我不想做这题了">孩子说：不想做了</button>
+        </div>
+      </section>
+    </main>
+
+    <aside class="panel right">
+      <h2>模型诊断</h2>
+      <div class="note" id="diagnosisNote">
+        <strong>待开始</strong>
+        点击“开始 AI 诊断”后，这里会显示模型判断。
+      </div>
+
+      <h2>判断依据</h2>
+      <div class="signal-list" id="signals"></div>
+    </aside>
+  </div>
+
+  <script>
+    const bookQuestions = {
+      "方程题": ["解方程：4x - 3 = 13", "解方程：2x + 7 = 19", "解方程：5x - 8 = 17"],
+      "有理数/实数计算题": ["计算：-2 × (3 - 8)", "计算：|-6| - 2 × 5", "计算：7 - 12 + 4"],
+      "整式化简题": ["化简：5a - (2a + 1)", "化简：4x + 3 - (x + 5)", "化简：2m - (m - 6)"],
+      "几何题": ["已知两直线平行，求一对内错角的关系", "已知∠1 = 65°，求它的补角", "判断两条直线是否平行"],
+      "统计与数据题": ["根据频数表判断样本总数", "根据条形统计图回答最大频数", "求一组数据的平均数"]
+    };
+
+    const state = {
+      mode: "做错了",
+      source: "upload",
+      imageDataUrl: "",
+      history: [],
+      current: {}
+    };
+
+    const $ = selector => document.querySelector(selector);
+    const chat = $("#chat");
+    const signals = $("#signals");
+    const diagnosisNote = $("#diagnosisNote");
+    const questionInput = $("#questionInput");
+    const situationInput = $("#situationInput");
+    const taskHint = $("#taskHint");
+    const imageInput = $("#imageInput");
+    const preview = $("#preview");
+    const startButton = $("#startButton");
+    const replyButton = $("#replyButton");
+    const replyInput = $("#replyInput");
+
+    function addMessage(text, who = "teacher", tone = "") {
+      const row = document.createElement("div");
+      row.className = `row ${who === "child" ? "user" : ""}`;
+      const bubble = document.createElement("div");
+      bubble.className = `bubble ${tone}`;
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      chat.appendChild(row);
+      chat.scrollTop = chat.scrollHeight;
+      state.history.push({ role: who, text });
+    }
+
+    function renderDiagnosis(data, mode) {
+      diagnosisNote.innerHTML = `
+        <strong>${data.task_type || "题型待确认"} · 置信度：${data.task_confidence || "未知"}</strong>
+        <div>考点：${data.knowledge_point || "待确认"}</div>
+        <div>${data.diagnosis || ""}</div>
+        <div style="margin-top:8px;color:#64748b;">运行模式：${mode === "ai" ? "真实模型" : "演示模式"}</div>
+      `;
+      signals.innerHTML = "";
+      for (const item of data.evidence || []) {
+        const div = document.createElement("div");
+        div.className = "signal";
+        div.textContent = item;
+        signals.appendChild(div);
+      }
+    }
+
+    async function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function callTutor(latestReply = "") {
+      startButton.disabled = true;
+      replyButton.disabled = true;
+      const payload = {
+        mode: state.mode,
+        source: state.source,
+        question: questionInput.value.trim(),
+        situation: situationInput.value.trim(),
+        taskHint: taskHint.value,
+        latestReply,
+        imageDataUrl: state.imageDataUrl,
+        history: state.history
+      };
+
+      const response = await fetch("/api/tutor", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      startButton.disabled = false;
+      replyButton.disabled = false;
+      if (!response.ok || data.error) {
+        addMessage(`服务出错：${data.error || "未知错误"}`, "teacher", "bad");
+        if (data.result) renderDiagnosis(data.result, data.mode || "demo");
+        return;
+      }
+      renderDiagnosis(data.result, data.mode);
+      if (data.result.teacher_message) addMessage(data.result.teacher_message, "teacher", "warn");
+      if (data.result.next_question) addMessage(data.result.next_question, "teacher");
+    }
+
+    function populateBookQuestions() {
+      const chapter = $("#bookChapter").value;
+      const select = $("#bookQuestion");
+      select.innerHTML = "";
+      for (const question of bookQuestions[chapter]) {
+        const option = document.createElement("option");
+        option.value = question;
+        option.textContent = question;
+        select.appendChild(option);
+      }
+      questionInput.value = select.value;
+      taskHint.value = chapter;
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      $("#wrongMode").classList.toggle("active", mode === "做错了");
+      $("#stuckMode").classList.toggle("active", mode === "不会做");
+      $("#stuckSources").classList.toggle("hidden", mode !== "不会做");
+      if (mode === "做错了") {
+        state.source = "upload";
+        $("#photoBlock").classList.remove("hidden");
+        $("#bookBlock").classList.add("hidden");
+        situationInput.value = "她写了错误步骤，或者说自己当时是按某个方法做的。";
+      } else {
+        situationInput.value = "她说这题不会，不知道第一步该看哪里。";
+      }
+    }
+
+    function setSource(source) {
+      state.source = source;
+      $("#uploadSource").classList.toggle("active", source === "upload");
+      $("#bookSource").classList.toggle("active", source === "book");
+      $("#photoBlock").classList.toggle("hidden", source !== "upload");
+      $("#bookBlock").classList.toggle("hidden", source !== "book");
+      if (source === "book") populateBookQuestions();
+    }
+
+    async function refreshHealth() {
+      try {
+        const res = await fetch("/health");
+        const data = await res.json();
+        const el = $("#serverStatus");
+        el.textContent = data.hasOpenAIKey ? `真实模型：${data.model}` : "演示模式：未配置 API key";
+        el.className = `status ${data.hasOpenAIKey ? "ai" : "demo"}`;
+      } catch {
+        $("#serverStatus").textContent = "服务未连接";
+      }
+    }
+
+    $("#wrongMode").addEventListener("click", () => setMode("做错了"));
+    $("#stuckMode").addEventListener("click", () => setMode("不会做"));
+    $("#uploadSource").addEventListener("click", () => setSource("upload"));
+    $("#bookSource").addEventListener("click", () => setSource("book"));
+    $("#bookChapter").addEventListener("change", populateBookQuestions);
+    $("#bookQuestion").addEventListener("change", () => {
+      questionInput.value = $("#bookQuestion").value;
+    });
+
+    imageInput.addEventListener("change", async () => {
+      const file = imageInput.files && imageInput.files[0];
+      if (!file) {
+        state.imageDataUrl = "";
+        preview.style.display = "none";
+        return;
+      }
+      state.imageDataUrl = await fileToDataUrl(file);
+      preview.src = state.imageDataUrl;
+      preview.style.display = "block";
+    });
+
+    startButton.addEventListener("click", async () => {
+      state.history = [];
+      state.current = {
+        question: questionInput.value.trim(),
+        situation: situationInput.value.trim()
+      };
+      $("#questionView").textContent = state.current.question || "未填写题目";
+      $("#situationView").textContent = `来源：${state.mode} / ${state.source === "book" ? "书中选题" : "上传或手动录入"}｜${state.current.situation || "未填写孩子表现"}`;
+      chat.innerHTML = "";
+      addMessage("我先看题目和孩子表现，再判断题型、考点和第一句该怎么问。", "teacher");
+      await callTutor("");
+    });
+
+    $("#replyForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      const text = replyInput.value.trim();
+      if (!text) return;
+      addMessage(text, "child");
+      replyInput.value = "";
+      await callTutor(text);
+    });
+
+    document.querySelectorAll(".chip").forEach(button => {
+      button.addEventListener("click", () => {
+        replyInput.value = button.dataset.reply;
+        replyInput.focus();
+      });
+    });
+
+    populateBookQuestions();
+    setMode("做错了");
+    refreshHealth();
+  </script>
+</body>
+</html>
