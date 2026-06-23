@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ai-math-tutor-online
+    runtime: node
+    plan: free
+    buildCommand: ""
+    startCommand: "node server.mjs"
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: OPENAI_MODEL
+        value: "gpt-4o-mini"
+      - key: OPENAI_API_KEY
+        sync: false
