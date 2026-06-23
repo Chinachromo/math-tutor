@@ -346,7 +346,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`AI math tutor is running at http://127.0.0.1:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`AI math tutor is running on port ${PORT}`);
   console.log(OPENAI_API_KEY ? `Using OpenAI model: ${OPENAI_MODEL}` : "OPENAI_API_KEY is not set; running in demo mode.");
 });
