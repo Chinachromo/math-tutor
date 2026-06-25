@@ -24,8 +24,9 @@ function loadDotEnv() {
 loadDotEnv();
 
 const PORT = Number(process.env.PORT || 8799);
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const HOST = process.env.HOST || "0.0.0.0";
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -147,12 +148,11 @@ function readBody(req, maxBytes = 12 * 1024 * 1024) {
   });
 }
 
-function outputTextFromResponse(data) {
-  if (typeof data.output_text === "string") return data.output_text;
-  for (const item of data.output || []) {
-    for (const part of item.content || []) {
-      if (typeof part.text === "string") return part.text;
-    }
+function outputTextFromChatCompletion(data) {
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(part => part?.text || "").join("");
   }
   return "";
 }
@@ -167,7 +167,7 @@ function safeJsonParse(text) {
   }
 }
 
-function localDemoTutor(payload) {
+function localDemoTutor(payload, reason = "未配置 OPENROUTER_API_KEY") {
   const text = `${payload.question || ""} ${payload.situation || ""} ${payload.latestReply || ""}`;
   let taskType = "题型待确认";
   let knowledgePoint = "先确认题目目标和已知条件";
@@ -199,8 +199,8 @@ function localDemoTutor(payload) {
     task_type: taskType,
     task_confidence: taskType === "题型待确认" ? "低" : "中",
     knowledge_point: knowledgePoint,
-    diagnosis: "演示模式：还没有连接真实模型，只能做基础规则判断。接入 OPENAI_API_KEY 后会根据题目和孩子回答做智能诊断。",
-    evidence: ["当前没有检测到 OPENAI_API_KEY", "这是本地演示返回", `根据文字线索暂判：${taskType}`],
+    diagnosis: `演示模式：${reason}。当前只能做基础规则判断。`,
+    evidence: [reason, "这是本地演示返回", `根据文字线索暂判：${taskType}`],
     teacher_message: "我先不直接讲答案。我们先把这题看清楚，找到真正卡住的位置。",
     next_question: nextQuestion,
     interaction_goal: "确认题型入口和孩子第一处卡点。",
@@ -240,53 +240,58 @@ ${history || "无"}
 `;
 }
 
-async function callOpenAI(payload) {
-  if (!OPENAI_API_KEY) {
-    return { mode: "demo", result: localDemoTutor(payload) };
+async function callOpenRouter(payload) {
+  if (!OPENROUTER_API_KEY) {
+    return { mode: "demo", provider: "OpenRouter", result: localDemoTutor(payload) };
   }
 
-  const content = [{ type: "input_text", text: buildUserPrompt(payload) }];
+  const content = [{ type: "text", text: buildUserPrompt(payload) }];
   if (payload.imageDataUrl && /^data:image\//.test(payload.imageDataUrl)) {
     content.push({
-      type: "input_image",
-      image_url: payload.imageDataUrl,
-      detail: "auto"
+      type: "image_url",
+      image_url: { url: payload.imageDataUrl }
     });
   }
 
   const body = {
-    model: OPENAI_MODEL,
-    instructions: SYSTEM_INSTRUCTIONS,
-    input: [{ role: "user", content }],
-    text: {
-      format: {
-        type: "json_schema",
+    model: OPENROUTER_MODEL,
+    messages: [
+      { role: "system", content: SYSTEM_INSTRUCTIONS },
+      { role: "user", content }
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
         name: "math_tutor_diagnosis",
         strict: true,
         schema: TASK_SCHEMA
       }
-    }
+    },
+    temperature: 0.2
   };
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
-      "authorization": `Bearer ${OPENAI_API_KEY}`,
-      "content-type": "application/json"
+      "authorization": `Bearer ${OPENROUTER_API_KEY}`,
+      "content-type": "application/json",
+      "HTTP-Referer": "https://ai-math-tutor-online.onrender.com",
+      "X-Title": "AI Math Tutor"
     },
     body: JSON.stringify(body)
   });
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = data.error?.message || `OpenAI API 请求失败：${response.status}`;
+    const message = data.error?.message || `OpenRouter API 请求失败：${response.status}`;
     throw new Error(message);
   }
 
-  const text = outputTextFromResponse(data);
+  const text = outputTextFromChatCompletion(data);
   return {
     mode: "ai",
-    model: OPENAI_MODEL,
+    provider: "OpenRouter",
+    model: OPENROUTER_MODEL,
     result: safeJsonParse(text)
   };
 }
@@ -316,17 +321,28 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") {
       sendJson(res, 200, {
         ok: true,
-        hasOpenAIKey: Boolean(OPENAI_API_KEY),
-        model: OPENAI_MODEL,
-        mode: OPENAI_API_KEY ? "ai" : "demo"
+        hasApiKey: Boolean(OPENROUTER_API_KEY),
+        provider: "OpenRouter",
+        model: OPENROUTER_MODEL,
+        mode: OPENROUTER_API_KEY ? "ai" : "demo"
       });
       return;
     }
 
     if (req.method === "POST" && req.url === "/api/tutor") {
       const payload = await readBody(req);
-      const result = await callOpenAI(payload);
-      sendJson(res, 200, result);
+      try {
+        const result = await callOpenRouter(payload);
+        sendJson(res, 200, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        sendJson(res, 502, {
+          error: message,
+          mode: "demo",
+          provider: "OpenRouter",
+          result: localDemoTutor(payload, "OpenRouter 模型服务暂时不可用")
+        });
+      }
       return;
     }
 
@@ -341,12 +357,13 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 500, {
       error: message,
       mode: "demo",
-      result: localDemoTutor({})
+      provider: "OpenRouter",
+      result: localDemoTutor({}, "服务器处理请求时出错")
     });
   }
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`AI math tutor is running on port ${PORT}`);
-  console.log(OPENAI_API_KEY ? `Using OpenAI model: ${OPENAI_MODEL}` : "OPENAI_API_KEY is not set; running in demo mode.");
+server.listen(PORT, HOST, () => {
+  console.log(`AI math tutor is running at http://${HOST}:${PORT}`);
+  console.log(OPENROUTER_API_KEY ? `Using OpenRouter model: ${OPENROUTER_MODEL}` : "OPENROUTER_API_KEY is not set; running in demo mode.");
 });
