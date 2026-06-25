@@ -585,8 +585,8 @@
         const res = await fetch("/health");
         const data = await res.json();
         const el = $("#serverStatus");
-        el.textContent = data.hasOpenAIKey ? `真实模型：${data.model}` : "演示模式：未配置 API key";
-        el.className = `status ${data.hasOpenAIKey ? "ai" : "demo"}`;
+        el.textContent = data.hasApiKey ? `${data.provider}：${data.model}` : "演示模式：未配置 OpenRouter API key";
+        el.className = `status ${data.hasApiKey ? "ai" : "demo"}`;
       } catch {
         $("#serverStatus").textContent = "服务未连接";
       }
