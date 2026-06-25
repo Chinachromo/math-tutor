@@ -111,10 +111,12 @@
 
     .mode-tabs, .source-tabs {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, 1fr);
       gap: 8px;
       margin-bottom: 10px;
     }
+
+    .source-tabs { grid-template-columns: 1fr 1fr; }
 
     .tab {
       min-height: 38px;
@@ -351,6 +353,7 @@
         <div class="mode-tabs">
           <button class="tab active" id="wrongMode" type="button">做错了</button>
           <button class="tab" id="stuckMode" type="button">不会做</button>
+          <button class="tab" id="worksheetMode" type="button">课后测试卷</button>
         </div>
 
         <div id="stuckSources" class="source-tabs hidden">
@@ -358,10 +361,11 @@
           <button class="tab" id="bookSource" type="button">从书中选题</button>
         </div>
 
+        <div id="diagnosisBlock">
         <div id="photoBlock">
-          <label for="imageInput">题目/错题照片（可选）</label>
-          <input id="imageInput" type="file" accept="image/*">
-          <img id="preview" class="preview" alt="题目照片预览">
+        <label for="imageInput">题目/错题照片（可选）</label>
+        <input id="imageInput" type="file" accept="image/*">
+        <img id="preview" class="preview" alt="题目照片预览">
         </div>
 
         <div id="bookBlock" class="hidden">
@@ -377,8 +381,8 @@
           <select id="bookQuestion"></select>
         </div>
 
-        <label for="questionInput">题目文字</label>
-        <textarea id="questionInput">解方程：3x + 5 = 20</textarea>
+        <label for="questionInput">题目文字（上传照片后可留空）</label>
+        <textarea id="questionInput" placeholder="可以手动输入题目；如果已经上传清晰照片，这里可以留空。"></textarea>
 
         <label for="taskHint">题型线索</label>
         <select id="taskHint">
@@ -394,9 +398,45 @@
         </select>
 
         <label for="situationInput">孩子当时的表现</label>
-        <textarea id="situationInput">她写了 3x = 20 + 5，然后说移项就是换到另一边。</textarea>
+        <textarea id="situationInput" placeholder="例如：她卡在第一步；她把某一步写错；她说看不懂题目在问什么。"></textarea>
 
         <button class="btn full" id="startButton" type="button">开始 AI 诊断</button>
+        </div>
+
+        <div id="worksheetBlock" class="hidden">
+          <label for="worksheetChapter">测试范围</label>
+          <select id="worksheetChapter">
+            <option value="七上：有理数">七上：有理数</option>
+            <option value="七上：整式的加减">七上：整式的加减</option>
+            <option value="七上：一元一次方程">七上：一元一次方程</option>
+            <option value="七上：几何图形初步">七上：几何图形初步</option>
+            <option value="七下：相交线与平行线">七下：相交线与平行线</option>
+            <option value="七下：实数">七下：实数</option>
+            <option value="七下：平面直角坐标系">七下：平面直角坐标系</option>
+            <option value="七下：二元一次方程组">七下：二元一次方程组</option>
+            <option value="七下：不等式与不等式组">七下：不等式与不等式组</option>
+            <option value="七下：数据的收集整理与描述">七下：数据的收集整理与描述</option>
+          </select>
+
+          <label for="worksheetDifficulty">难度</label>
+          <select id="worksheetDifficulty">
+            <option value="基础巩固">基础巩固</option>
+            <option value="中档提高">中档提高</option>
+            <option value="综合挑战">综合挑战</option>
+          </select>
+
+          <label for="worksheetCount">题量</label>
+          <select id="worksheetCount">
+            <option value="5">5 题</option>
+            <option value="8" selected>8 题</option>
+            <option value="10">10 题</option>
+          </select>
+
+          <label for="worksheetFocus">最近薄弱点（可选）</label>
+          <textarea id="worksheetFocus" placeholder="例如：通分、去括号、列方程、几何读图、坐标点等。"></textarea>
+
+          <button class="btn full" id="worksheetButton" type="button">生成课后测试卷</button>
+        </div>
       </section>
     </aside>
 
@@ -424,7 +464,8 @@
         </form>
         <div class="chips">
           <button class="chip" type="button" data-reply="我不知道第一步怎么做">孩子说：不知道第一步</button>
-          <button class="chip" type="button" data-reply="我觉得应该把它移过去">孩子说：移过去</button>
+          <button class="chip" type="button" data-reply="老师，你好像看错题目了">老师看错题目</button>
+          <button class="chip" type="button" data-reply="这不是这个题型">题型判断不对</button>
           <button class="chip" type="button" data-reply="我会算，但不知道为什么要这样">孩子说：会算但不懂</button>
           <button class="chip" type="button" data-reply="我不想做这题了">孩子说：不想做了</button>
         </div>
@@ -457,7 +498,8 @@
       source: "upload",
       imageDataUrl: "",
       history: [],
-      current: {}
+      current: {},
+      worksheet: null
     };
 
     const $ = selector => document.querySelector(selector);
@@ -470,10 +512,11 @@
     const imageInput = $("#imageInput");
     const preview = $("#preview");
     const startButton = $("#startButton");
+    const worksheetButton = $("#worksheetButton");
     const replyButton = $("#replyButton");
     const replyInput = $("#replyInput");
 
-    function addMessage(text, who = "teacher", tone = "") {
+    function addMessage(text, who = "teacher", tone = "", remember = true) {
       const row = document.createElement("div");
       row.className = `row ${who === "child" ? "user" : ""}`;
       const bubble = document.createElement("div");
@@ -482,7 +525,25 @@
       row.appendChild(bubble);
       chat.appendChild(row);
       chat.scrollTop = chat.scrollHeight;
-      state.history.push({ role: who, text });
+      if (remember) state.history.push({ role: who, text });
+      return row;
+    }
+
+    function safeErrorText(message) {
+      const text = String(message || "未知错误");
+      if (/failed to fetch|networkerror|load failed/i.test(text)) {
+        if (location.protocol === "file:") {
+          return "当前打开的是本地文件页面，不能连接后端。请打开 https://ai-math-tutor-online.onrender.com/ 再测试。";
+        }
+        return "浏览器没有连到后端服务。请确认打开的是 https://ai-math-tutor-online.onrender.com/，等待 Render 部署完成后刷新再试；如果刚上传了大照片，请只拍题目区域后重试。";
+      }
+      if (/请求太大|payload|body too large|entity too large/i.test(text)) {
+        return "题目照片太大，服务器没有收到完整内容。请只拍题目区域，或换一张更清晰但文件更小的照片。";
+      }
+      if (/invalid header|Headers\.append|authorization|Bearer|sk-[A-Za-z0-9_-]+/i.test(text)) {
+        return "OpenRouter API key 格式不正确。请在 Render 环境变量里只填写一个新的 OpenRouter key，不要带空格、换行、Bearer 或其他 key。";
+      }
+      return text.replace(/sk-[A-Za-z0-9_-]+/g, "[已隐藏的 API key]");
     }
 
     function renderDiagnosis(data, mode) {
@@ -501,7 +562,30 @@
       }
     }
 
-    async function fileToDataUrl(file) {
+    function renderWorksheet(data, mode) {
+      state.worksheet = data;
+      $("#questionView").textContent = data.title || "课后测试卷";
+      $("#situationView").textContent = `范围：${data.scope || $("#worksheetChapter").value}｜难度：${data.difficulty || $("#worksheetDifficulty").value}`;
+      diagnosisNote.innerHTML = `
+        <strong>${data.title || "课后测试卷"} · ${data.difficulty || "难度待定"}</strong>
+        <div>${data.scope || ""}</div>
+        <div style="margin-top:8px;color:#64748b;">运行模式：${mode === "ai" ? "真实模型" : "演示模式"}</div>
+      `;
+      signals.innerHTML = "";
+      for (const item of data.answer_key || []) {
+        const div = document.createElement("div");
+        div.className = "signal";
+        div.textContent = `${item.number}. ${item.answer}`;
+        signals.appendChild(div);
+      }
+      chat.innerHTML = "";
+      addMessage("这是一份原创课后测试卷，按人教版七年级常见考法生成，没有复制市售教辅原题。做完后可以告诉我“第几题错了 + 她怎么写的”，我会继续做错因诊断。", "teacher", "good", false);
+      for (const item of data.questions || []) {
+        addMessage(`${item.number}. ${item.question}`, "teacher", "", false);
+      }
+    }
+
+    async function readFileAsDataUrl(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result));
@@ -510,12 +594,44 @@
       });
     }
 
+    async function fileToDataUrl(file) {
+      const raw = await readFileAsDataUrl(file);
+      if (!file.type.startsWith("image/") || file.size < 1_200_000) return raw;
+
+      try {
+        const image = new Image();
+        image.src = raw;
+        await image.decode();
+        const maxSide = 1400;
+        const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+        if (scale >= 1) return raw;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL("image/jpeg", 0.82);
+      } catch {
+        return raw;
+      }
+    }
+
     async function callTutor(latestReply = "") {
+      if (!questionInput.value.trim() && !state.imageDataUrl) {
+        addMessage("请先上传题目照片，或者把题目文字输入进来。这样我才能先判断题型。", "teacher", "bad");
+        return;
+      }
+      const previousStartText = startButton.textContent;
+      const previousReplyText = replyButton.textContent;
+      const waitingRow = addMessage("正在读题和分析孩子卡点，一般需要几秒到几十秒。", "teacher", "warn", false);
       startButton.disabled = true;
       replyButton.disabled = true;
+      startButton.textContent = "诊断中...";
+      replyButton.textContent = "等待中";
       const payload = {
-        mode: state.mode,
-        source: state.source,
+        mode: state.mode === "课后测试卷" ? "做错了" : state.mode,
+        source: state.mode === "课后测试卷" ? "worksheet" : state.source,
         question: questionInput.value.trim(),
         situation: situationInput.value.trim(),
         taskHint: taskHint.value,
@@ -524,22 +640,70 @@
         history: state.history
       };
 
-      const response = await fetch("/api/tutor", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await response.json();
-      startButton.disabled = false;
-      replyButton.disabled = false;
-      if (!response.ok || data.error) {
-        addMessage(`服务出错：${data.error || "未知错误"}`, "teacher", "bad");
-        if (data.result) renderDiagnosis(data.result, data.mode || "demo");
-        return;
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 130_000);
+
+      try {
+        const response = await fetch("/api/tutor", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.error) {
+          addMessage(`服务出错：${safeErrorText(data.error)}`, "teacher", "bad");
+          if (data.result) renderDiagnosis(data.result, data.mode || "demo");
+          return;
+        }
+        renderDiagnosis(data.result, data.mode);
+        if (data.result.teacher_message) addMessage(data.result.teacher_message, "teacher", "warn");
+        if (data.result.next_question) addMessage(data.result.next_question, "teacher");
+      } catch (error) {
+        const isAbort = error && error.name === "AbortError";
+        addMessage(isAbort
+          ? "这次模型响应超时了。可以再点一次开始，或者换一张更清晰、更小的题目照片。"
+          : `服务出错：${safeErrorText(error && error.message)}`, "teacher", "bad");
+      } finally {
+        window.clearTimeout(timeoutId);
+        waitingRow.remove();
+        startButton.disabled = false;
+        replyButton.disabled = false;
+        startButton.textContent = previousStartText;
+        replyButton.textContent = previousReplyText;
       }
-      renderDiagnosis(data.result, data.mode);
-      if (data.result.teacher_message) addMessage(data.result.teacher_message, "teacher", "warn");
-      if (data.result.next_question) addMessage(data.result.next_question, "teacher");
+    }
+
+    async function generateWorksheet() {
+      const previousText = worksheetButton.textContent;
+      const waitingRow = addMessage("正在生成原创课后测试卷，一般需要十几秒。", "teacher", "warn", false);
+      worksheetButton.disabled = true;
+      worksheetButton.textContent = "生成中...";
+      try {
+        const response = await fetch("/api/worksheet", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            chapter: $("#worksheetChapter").value,
+            difficulty: $("#worksheetDifficulty").value,
+            count: Number($("#worksheetCount").value),
+            focus: $("#worksheetFocus").value.trim()
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.error) {
+          addMessage(`服务出错：${safeErrorText(data.error)}`, "teacher", "bad");
+          if (data.result) renderWorksheet(data.result, data.mode || "demo");
+          return;
+        }
+        renderWorksheet(data.result, data.mode);
+      } catch (error) {
+        addMessage(`服务出错：${safeErrorText(error && error.message)}`, "teacher", "bad");
+      } finally {
+        waitingRow.remove();
+        worksheetButton.disabled = false;
+        worksheetButton.textContent = previousText;
+      }
     }
 
     function populateBookQuestions() {
@@ -560,24 +724,38 @@
       state.mode = mode;
       $("#wrongMode").classList.toggle("active", mode === "做错了");
       $("#stuckMode").classList.toggle("active", mode === "不会做");
+      $("#worksheetMode").classList.toggle("active", mode === "课后测试卷");
       $("#stuckSources").classList.toggle("hidden", mode !== "不会做");
+      $("#diagnosisBlock").classList.toggle("hidden", mode === "课后测试卷");
+      $("#worksheetBlock").classList.toggle("hidden", mode !== "课后测试卷");
       if (mode === "做错了") {
         state.source = "upload";
         $("#photoBlock").classList.remove("hidden");
         $("#bookBlock").classList.add("hidden");
-        situationInput.value = "她写了错误步骤，或者说自己当时是按某个方法做的。";
+        situationInput.placeholder = "她写了错误步骤，或者说自己当时是按某个方法做的。";
+        replyInput.placeholder = "孩子回答老师的问题，或家长补充观察";
+      } else if (mode === "不会做") {
+        situationInput.placeholder = "她说这题不会，不知道第一步该看哪里。";
+        replyInput.placeholder = "孩子回答老师的问题，或家长补充观察";
       } else {
-        situationInput.value = "她说这题不会，不知道第一步该看哪里。";
+        $("#questionView").textContent = "课后测试卷";
+        $("#situationView").textContent = "选择范围、难度和题量后生成原创练习。";
+        replyInput.placeholder = "做完后输入：第3题错了，她写成……";
       }
     }
 
     function setSource(source) {
+      const previousSource = state.source;
       state.source = source;
       $("#uploadSource").classList.toggle("active", source === "upload");
       $("#bookSource").classList.toggle("active", source === "book");
       $("#photoBlock").classList.toggle("hidden", source !== "upload");
       $("#bookBlock").classList.toggle("hidden", source !== "book");
       if (source === "book") populateBookQuestions();
+      if (source === "upload" && previousSource === "book") {
+        questionInput.value = "";
+        taskHint.value = "自动判断";
+      }
     }
 
     async function refreshHealth() {
@@ -585,17 +763,25 @@
         const res = await fetch("/health");
         const data = await res.json();
         const el = $("#serverStatus");
+        if (data.hasApiKey && data.apiKeyFormatOk === false) {
+          el.textContent = "OpenRouter API key 格式需检查";
+          el.className = "status demo";
+          return;
+        }
         el.textContent = data.hasApiKey ? `${data.provider}：${data.model}` : "演示模式：未配置 OpenRouter API key";
         el.className = `status ${data.hasApiKey ? "ai" : "demo"}`;
       } catch {
-        $("#serverStatus").textContent = "服务未连接";
+        $("#serverStatus").textContent = location.protocol === "file:" ? "请打开线上地址测试" : "后端服务未连接";
+        $("#serverStatus").className = "status demo";
       }
     }
 
     $("#wrongMode").addEventListener("click", () => setMode("做错了"));
     $("#stuckMode").addEventListener("click", () => setMode("不会做"));
+    $("#worksheetMode").addEventListener("click", () => setMode("课后测试卷"));
     $("#uploadSource").addEventListener("click", () => setSource("upload"));
     $("#bookSource").addEventListener("click", () => setSource("book"));
+    worksheetButton.addEventListener("click", generateWorksheet);
     $("#bookChapter").addEventListener("change", populateBookQuestions);
     $("#bookQuestion").addEventListener("change", () => {
       questionInput.value = $("#bookQuestion").value;
@@ -619,7 +805,7 @@
         question: questionInput.value.trim(),
         situation: situationInput.value.trim()
       };
-      $("#questionView").textContent = state.current.question || "未填写题目";
+      $("#questionView").textContent = state.current.question || (state.imageDataUrl ? "已上传题目照片" : "未填写题目");
       $("#situationView").textContent = `来源：${state.mode} / ${state.source === "book" ? "书中选题" : "上传或手动录入"}｜${state.current.situation || "未填写孩子表现"}`;
       chat.innerHTML = "";
       addMessage("我先看题目和孩子表现，再判断题型、考点和第一句该怎么问。", "teacher");
@@ -632,6 +818,19 @@
       if (!text) return;
       addMessage(text, "child");
       replyInput.value = "";
+      if (state.mode === "课后测试卷") {
+        const match = text.match(/第?\s*(\d+)\s*题/);
+        const number = match ? Number(match[1]) : 0;
+        const item = state.worksheet?.questions?.find(question => Number(question.number) === number);
+        if (!item) {
+          addMessage("请告诉我是第几题错了，并把她的做法或答案也发我。比如：第3题错了，她写成……", "teacher", "warn");
+          return;
+        }
+        questionInput.value = item.question;
+        taskHint.value = item.type_hint || "自动判断";
+        situationInput.value = `课后测试卷第${number}题，孩子反馈：${text}`;
+        addMessage(`我先按第 ${number} 题做错因诊断。`, "teacher", "warn");
+      }
       await callTutor(text);
     });
 
